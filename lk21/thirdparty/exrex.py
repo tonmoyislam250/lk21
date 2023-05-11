@@ -22,7 +22,11 @@ try:
     from future_builtins import map, range
 except:
     pass
-from re import sre_parse, U
+from re import match, U
+try:
+    import re._parser as sre_parse
+except ImportError: # Python < 3.11
+    from re import sre_parse
 from itertools import tee
 from random import choice, randint
 from types import GeneratorType
@@ -47,6 +51,10 @@ __all__ = (
 CATEGORIES = {
     sre_parse.CATEGORY_SPACE: sorted(sre_parse.WHITESPACE),
     sre_parse.CATEGORY_DIGIT: sorted(sre_parse.DIGITS),
+    sre_parse.CATEGORY_WORD: [unichr(x) for x in range(256) if
+                              match('\w', unichr(x), U)],
+    sre_parse.CATEGORY_NOT_WORD: [unichr(x) for x in range(256) if
+                                  match('\W', unichr(x), U)],
     'category_any': [unichr(x) for x in range(32, 123)]
 }
 
@@ -212,8 +220,7 @@ def _gen(d, limit=20, count=False, grouprefs=None):
             if count:
                 strings = (
                     strings or 1) * (sum(ggen([0], _gen, subexpr, limit=limit, count=True, grouprefs=grouprefs)) or 1)
-            ret = ggen(ret, _gen, subexpr, limit=limit, count=False,
-                       grouprefs=grouprefs, groupref=i[1][0])
+            ret = ggen(ret, _gen, subexpr, limit=limit, count=False, grouprefs=grouprefs, groupref=i[1][0])
         # ignore ^ and $
         elif i[0] == sre_parse.AT:
             continue
@@ -437,3 +444,107 @@ def getone(regex_string, limit=20):
     """Returns a random matching string to a given regular expression
     """
     return _randone(parse(regex_string), limit)
+
+
+def argparser():
+    import argparse
+    from sys import stdout
+    argp = argparse.ArgumentParser(
+        description='exrex - regular expression string generator')
+    argp.add_argument(
+        '-o', '--output',
+        help='Output file - default is STDOUT',
+        metavar='FILE',
+        default=stdout,
+        type=argparse.FileType('w', encoding='utf-8')
+    )
+    argp.add_argument(
+        '-l', '--limit',
+        help='Max limit for range size - default is 20',
+        default=20,
+        action='store',
+        type=int,
+        metavar='N'
+    )
+    argp.add_argument(
+        '-c', '--count',
+        help='Count matching strings',
+        default=False,
+        action='store_true'
+    )
+    argp.add_argument(
+        '-m', '--max-number',
+        help='Max number of strings - default is -1',
+        default=-1,
+        action='store',
+        type=int,
+        metavar='N'
+    )
+    argp.add_argument(
+        '-r', '--random',
+        help='Returns a random string that matches to the regex',
+        default=False,
+        action='store_true'
+    )
+    argp.add_argument(
+        '-s', '--simplify',
+        help='Simplifies a regular expression',
+        default=False,
+        action='store_true'
+    )
+    argp.add_argument(
+        '-d', '--delimiter',
+        help='Delimiter - default is \\n',
+        default='\n'
+    )
+    argp.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Verbose mode',
+        default=False
+    )
+    argp.add_argument(
+        'regex',
+        metavar='REGEX',
+        help='REGEX string'
+    )
+    return vars(argp.parse_args())
+
+
+def __main__():
+    from sys import exit, stderr
+    args = argparser()
+    if args['verbose']:
+        args['output'].write(
+            '%r%s' % (parse(args['regex']), args['delimiter']))
+    if args['count']:
+        args['output'].write(
+            '%d%s' % (count(args['regex'], limit=args['limit']), args['delimiter']))
+        exit(0)
+    if args['random']:
+        args['output'].write(
+            '%s%s' % (getone(args['regex'], limit=args['limit']), args['delimiter']))
+        exit(0)
+    if args['simplify']:
+        args['output'].write(
+            '%s%s' % (simplify(args['regex']), args['delimiter']))
+        exit(0)
+    try:
+        g = generate(args['regex'], args['limit'])
+    except Exception as e:
+        stderr.write('[!] Error: %s\n' % e)
+        exit(1)
+    args['output'].write(next(g))
+    args['max_number'] -= 1
+    for s in g:
+        if args['max_number'] == 0:
+            break
+        args['max_number'] -= 1
+        args['output'].write(args['delimiter'])
+        args['output'].write(s)
+    if args['delimiter'] == '\n':
+        args['output'].write('\n')
+
+
+if __name__ == '__main__':
+    __main__()
